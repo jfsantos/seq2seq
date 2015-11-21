@@ -103,8 +103,8 @@ end
 
 function Recurrent:updateOutput(input)
     local inp, prev_y, prev_h = unpack(input)
-	print('Recurrent type(inp) ==',type(inp))
-	print('Recurrent inp = ',inp)
+	--print('Recurrent type(inp) ==',type(inp))
+	--print('Recurrent inp = ',inp)
 
 	if #inp == 1 then
 		inp = inp[1]
@@ -114,10 +114,10 @@ function Recurrent:updateOutput(input)
     prev_y = prev_y or self.zeros_output
     prev_h = prev_h or self.zeros_hidden
 
-	print('Recurrent')
-	print('inp',inp)
-	print('prev_y',prev_y)
-	print('prev_h',prev_h)
+	--print('Recurrent')
+	--print('inp',inp)
+	--print('prev_y',prev_y)
+	--print('prev_h',prev_h)
     self.output = self.recurrent:forward({inp,prev_y,prev_h})
     return self.output
 end
