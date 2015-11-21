@@ -120,8 +120,8 @@ end
 
 
 function RNN3:updateOutput(input)
-	print('RNN3 type(input) ==',type(input))
-	print('RNN3 input = ',input)
+	--print('RNN3 type(input) ==',type(input))
+	--print('RNN3 input = ',input)
 	local batchSize = getBatchSize(input)
 	
 	if batchSize == 0 then
@@ -139,11 +139,11 @@ function RNN3:updateOutput(input)
 		start,finish,step = self.T, 1, -1
 	end
 	for t = start,finish,step do
-		print('==================================> RNN t =',t)
+		--print('==================================> RNN t =',t)
 		y, h = unpack(self.rnn[t]:forward({input,y,h}))
-		print('RNN3 output')
-		print('y',y)
-		print('h',h)
+		--print('RNN3 output')
+		--print('y',y)
+		--print('h',h)
 		self.output:select(self.sequence_dim,t):copy(y)
 		self.h[t] = h
 	end

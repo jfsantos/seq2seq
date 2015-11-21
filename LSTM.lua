@@ -72,21 +72,18 @@ end
 
 function LSTM:float()
 	self.lstm 	= self.lstm:float()
-	self.ones 	= self.ones:float()
 	self.zeros	= self.zeros:float()
 	return self:type('torch.FloatTensor')
 end
 
 function LSTM:double()
 	self.lstm 	= self.lstm:double()
-	self.ones 	= self.ones:double()
 	self.zeros	= self.zeros:double()
 	return self:type('torch.DoubleTensor')
 end
 
 function LSTM:cuda()
 	self.lstm 	= self.lstm:cuda()
-	self.ones 	= self.ones:cuda()
 	self.zeros	= self.zeros:cuda()
 	return self:type('torch.CudaTensor')
 end
@@ -128,6 +125,10 @@ function LSTM:updateGradInput(input, gradOutput)
 	prev_h = prev_h or self.zeros
 	dEdc = dEdc or self.zeros
 
+	--print('LSTM')
+	--print('inp',inp)
+	--print('prev_h',prev_h)
+	--print('prev_c',prev_c)
 	local dEdx,dEdph,dEdpc = unpack(self.lstm:backward({inp,prev_h,prev_c},{dEdh,dEdc}))
 	self.gradInput = {dEdx,dEdph,dEdpc}
 	return self.gradInput
