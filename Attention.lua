@@ -104,10 +104,12 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	-- outputs:
 	--   s_t	   ~ output			 ~ stateDepth
 	--   mem_t     ~ memory			 ~ stateDepth
-	local dec_rec_inp = {nn.Identity()({c,prev_y}),prev_s,prev_mem}
-	local s,mem 	  = decoder_recurrent(dec_rec_inp):split(2)
+	local y_in        = nn.Tanh()(nn.Linear(outputDepth,stateDepth)(prev_y))
+	local c_in        = nn.Tanh()(nn.Linear(annotationDepth,stateDepth)(c))
+	local dec_rec_inp = nn.Linear(2*stateDepth,stateDepth)(nn.JoinTable(1,1)({c_in,y_in}))
+	local s,mem       = decoder_recurrent({dec_rec_inp,prev_s,prev_mem}):split(2)
 
-	------------------ decoder_recurrent ------------------
+	------------------ decoder_mlp ------------------
 	-- inputs:
 	--   s_t       ~ input      ~ stateDepth
 	-- 	 c_t	   ~ input      ~ annotationDepth
