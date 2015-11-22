@@ -6,6 +6,7 @@ require 'RNN';
 require 'hdf5';
 require 'xlua';
 require 'optim';
+require 'cunn';
 
 savedir = '/scratch/jmj/timit/'
 
@@ -15,13 +16,17 @@ data = file:all()
 file:close()
 
 numPhonemes = 62
+data.train.y = data.train.y + 1
+data.valid.y = data.valid.y + 1
+data.test.y  = data.test.y + 1
 
+--[[
 maxNumSamples = 20
 data.train.x = data.train.x[{{1,maxNumSamples}}]
 data.train.y = data.train.y[{{1,maxNumSamples}}]+1
 data.valid.x = data.valid.x[{{1,maxNumSamples}}]
 data.valid.y = data.valid.y[{{1,maxNumSamples}}]+1
-
+]]
 ------------------ Encoder ------------------
 seqLength       = data.train.x:size(2)
 inputFrameSize  = data.train.x:size(3)
@@ -72,6 +77,9 @@ decoder = nn.Attention(decoder_recurrent,
 ------------------ Autoencoder ------------------
 autoenc_inp           = nn.Identity()()
 autoencoder           = nn.gModule({autoenc_inp},{decoder(encoder(autoenc_inp))})
+
+autoencoder           = autoencoder:cuda()
+
 parameters, gradients = autoencoder:getParameters()
 
 ------------------ Train ------------------
@@ -86,15 +94,15 @@ function train()
 	for t=1,numSamples,batchSize do
 		xlua.progress(t+batchSize-1,numSamples)
 		local indices  = shuffle[{{ t, math.min(t+batchSize-1,numSamples) }}]
-		local batchX   = data.train.x:index(1,indices)
-		local batchY   = data.train.y:index(1,indices)
+		local batchX   = data.train.x:index(1,indices):cuda()
+		local batchY   = data.train.y:index(1,indices):cuda()
 		local optimfunc = function(x)
 			if x ~= parameters then
 				parameters:copy(x)
 			end
 			autoencoder:zeroGradParameters()
 			local logprobs  = autoencoder:forward(batchX)
-			local labelmask = torch.zeros(batchSize,T,outputDepth):scatter(3,batchY:reshape(batchSize,T,1):long(),1)			
+			local labelmask = torch.zeros(batchSize,T,outputDepth):scatter(3,batchY:reshape(batchSize,T,1):long(),1):cuda()			
 			local batchNLL  = -torch.cmul(labelmask,logprobs):sum()
 			NLL             = NLL + batchNLL
 			batchNLL        = batchNLL/batchSize
@@ -103,7 +111,7 @@ function train()
 			
 			local _, pred   = logprobs:max(3)
 			pred = pred:squeeze()
-			numCorrect      = numCorrect + torch.eq(pred,batchY):sum()
+			numCorrect      = numCorrect + torch.eq(pred,batchY:cuda()):sum()
 			numPredictions  = numPredictions + batchY:nElement()
 			return batchNLL, gradients
 		end
@@ -123,10 +131,10 @@ function evaluate(data)
 	for t=1,numSamples,batchSize do
 		xlua.progress(t+batchSize-1,numSamples)
 		local indices   = {{ t, math.min(t+batchSize-1,numSamples) }}
-		local batchX    = data.x[indices]
-		local batchY    = data.y[indices]
+		local batchX    = data.x[indices]:cuda()
+		local batchY    = data.y[indices]:cuda()
 		local logprobs  = autoencoder:forward(batchX)
-		local labelmask = torch.zeros(batchSize,T,outputDepth):scatter(3,batchY:reshape(batchSize,T,1):long(),1)			
+		local labelmask = torch.zeros(batchSize,T,outputDepth):scatter(3,batchY:reshape(batchSize,T,1):long(),1):cuda()			
 		local batchNLL  = -torch.cmul(labelmask,logprobs):sum()
 		NLL             = NLL + batchNLL
 		local _, pred   = logprobs:max(3)
