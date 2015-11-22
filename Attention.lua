@@ -4,7 +4,7 @@ require 'AddBias';
 require 'RNN_nonSeqInput';
 require 'Recurrent';
 
-nngraph.setDebug(true)
+--nngraph.setDebug(true)
 local Attention, parent = torch.class('nn.Attention','nn.Module')
 
 function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~ f
@@ -154,7 +154,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	local rnn_inp = {Vh(h),h}
 	local rnn	  = nn.RNN_nonSeqInput(decoder_base,T,outputDepth,false)(rnn_inp)
 	self.rnn = rnn
-	nngraph.annotateNodes()
+	--nngraph.annotateNodes()
 	local decoder = nn.gModule({h},{rnn}) 
 	decoder.name = "decoder"
 
