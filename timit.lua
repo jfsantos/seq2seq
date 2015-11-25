@@ -8,10 +8,11 @@ require 'xlua';
 require 'optim';
 require 'cunn';
 
+cutorch.setDevice(2)
 savedir = '/scratch/jmj/timit/'
 
 ------------------ Data ------------------
-local file = hdf5.open('/scratch/jmj/timit/logmel.h5')
+local file = hdf5.open('/scratch/jmj/timit/cqt.h5')
 data = file:all()
 file:close()
 
@@ -83,7 +84,7 @@ autoencoder           = autoencoder:cuda()
 parameters, gradients = autoencoder:getParameters()
 
 ------------------ Train ------------------
-batchSize = 10
+batchSize = 100
 optimMethod = optim.adam
 function train()
 	local numSamples     = data.train.x:size(1)
@@ -102,7 +103,7 @@ function train()
 			end
 			autoencoder:zeroGradParameters()
 			local logprobs  = autoencoder:forward(batchX)
-			local labelmask = torch.zeros(batchSize,T,outputDepth):scatter(3,batchY:reshape(batchSize,T,1):long(),1):cuda()			
+			local labelmask = torch.zeros(batchY:size(1),T,outputDepth):scatter(3,batchY:view(batchY:size(1),T,1):long(),1):cuda()			
 			local batchNLL  = -torch.cmul(labelmask,logprobs):sum()
 			NLL             = NLL + batchNLL
 			batchNLL        = batchNLL/batchSize
@@ -161,20 +162,23 @@ function updateLog(log,accuracy,nll)
 end
 	
 numEpochs = 100
---local trainLog, validLog
-trainLog = nil
-validLog = nil
+local trainLog, validLog
 for epoch = 1, numEpochs do
 	print('---------- epoch ' .. epoch .. '----------')
+	local start = sys.clock()
 	local trainAccuracy, trainNLL = train()
+	local time = 
+	print('training time   =', torch.round(10*(sys.clock()-start)/60)/10 .. ' minutes')
 	trainLog = updateLog(trainLog, trainAccuracy, trainNLL)
-	print('train Accuracy =', torch.round(100*100*trainAccuracy)/100 .. '%')
-	print('train NLL      =', torch.round(100*trainNLL)/100)
+	print('train Accuracy  =', torch.round(100*100*trainAccuracy)/100 .. '%')
+	print('train NLL       =', torch.round(100*trainNLL)/100)
 	
+	local start = sys.clock()
 	local validAccuracy, validNLL = evaluate(data.valid)
+	print('validation time =', torch.round(10*(sys.clock()-start)/60)/10 .. ' minutes')
 	validLog = updateLog(validLog, validAccuracy, validNLL)
-	print('valid Accuracy =', torch.round(100*100*validAccuracy)/100 .. '%')
-	print('valid NLL      =', torch.round(100*validNLL)/100)
+	print('valid Accuracy  =', torch.round(100*100*validAccuracy)/100 .. '%')
+	print('valid NLL       =', torch.round(100*validNLL)/100)
 	
 	local writeFile = hdf5.open(paths.concat(savedir,'log.h5'),'w')
 	writeFile:write('train',trainLog)
