@@ -1,8 +1,8 @@
 require 'nn'
 
-local RNN_nonSeqInput, parent = torch.class('nn.RNN_nonSeqInput','nn.Module')
+local RNNAttention, parent = torch.class('nn.RNNAttention','nn.Module')
 
-function RNN_nonSeqInput:__init(recurrent,T,dimoutput,reverse)
+function RNNAttention:__init(recurrent,T,dimoutput,reverse)
 	parent.__init(self)
 
 	assert(recurrent ~= nil, "recurrent cannot be nil")
@@ -20,7 +20,7 @@ function RNN_nonSeqInput:__init(recurrent,T,dimoutput,reverse)
 	self:resetCloneParameters();
 end
 
-function RNN_nonSeqInput:buildClones()
+function RNNAttention:buildClones()
 	local clones = {}
 	local p,dp = self.recurrent:parameters()
 	if p == nil then
@@ -44,7 +44,7 @@ function RNN_nonSeqInput:buildClones()
 	return clones
 end
 
-function RNN_nonSeqInput:resetCloneParameters()
+function RNNAttention:resetCloneParameters()
 	local p,dp = self.recurrent:parameters()
 	if p == nil then
 		p = {}
@@ -60,11 +60,11 @@ function RNN_nonSeqInput:resetCloneParameters()
 	return p,dp
 end
 
-function RNN_nonSeqInput:parameters()
+function RNNAttention:parameters()
 	return self:resetCloneParameters()
 end
 
-function RNN_nonSeqInput:getParameters()
+function RNNAttention:getParameters()
 	-- get parameters
 	local parameters,gradParameters = self:parameters()
 	local p, dp = self.flatten(parameters), self.flatten(gradParameters)
@@ -72,33 +72,33 @@ function RNN_nonSeqInput:getParameters()
 	return p, dp
 end
 
-function RNN_nonSeqInput:training()
+function RNNAttention:training()
 	for t=1,self.T do
 		self.rnn[t]:training()
 	end
 end
 
-function RNN_nonSeqInput:evaluate()
+function RNNAttention:evaluate()
 	for t=1,self.T do
 		self.rnn[t]:evaluate()
 	end
 end
 
-function RNN_nonSeqInput:float()
+function RNNAttention:float()
 	for t=1,self.T do
 		self.clone[t] = self.clones[t]:float()
 	end
 	return self:type('torch.FloatTensor')
 end
 
-function RNN_nonSeqInput:double()
+function RNNAttention:double()
 	for t=1,self.T do
 		self.clone[t] = self.clones[t]:double()
 	end
 	return self:type('torch.DoubleTensor')
 end
 
-function RNN_nonSeqInput:cuda()
+function RNNAttention:cuda()
 	for t=1,self.T do
 		self.clone[t] = self.clones[t]:cuda()
 	end
@@ -119,9 +119,9 @@ local function getBatchSize(input)
 end
 
 
-function RNN_nonSeqInput:updateOutput(input)
-	--print('RNN_nonSeqInput type(input) ==',type(input))
-	--print('RNN_nonSeqInput input = ',input)
+function RNNAttention:updateOutput(input)
+	--print('RNNAttention type(input) ==',type(input))
+	--print('RNNAttention input = ',input)
 	local batchSize = getBatchSize(input)
 	
 	if batchSize == 0 then
@@ -141,7 +141,7 @@ function RNN_nonSeqInput:updateOutput(input)
 	for t = start,finish,step do
 		--print('==================================> RNN t =',t)
 		y, h = unpack(self.rnn[t]:forward({input,y,h}))
-		--print('RNN_nonSeqInput output')
+		--print('RNNAttention output')
 		--print('y',y)
 		--print('h',h)
 		self.output:select(self.sequence_dim,t):copy(y)
@@ -151,7 +151,7 @@ function RNN_nonSeqInput:updateOutput(input)
 	return self.output
 end
 
-function RNN_nonSeqInput:_resizeGradInput(input,gradInput)
+function RNNAttention:_resizeGradInput(input,gradInput)
 	if type(input) == 'table' then
 		if type(gradInput) ~= 'table' then
 			gradInput = {}
@@ -166,7 +166,7 @@ function RNN_nonSeqInput:_resizeGradInput(input,gradInput)
 	return gradInput
 end
 
-function RNN_nonSeqInput:updateGradInput(input, gradOutput)
+function RNNAttention:updateGradInput(input, gradOutput)
 	local batchSize = getBatchSize(input)
 	
 	self.gradInput = self:_resizeGradInput(input,self.gradInput)

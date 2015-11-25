@@ -1,7 +1,7 @@
 require 'nn';
 require 'nngraph';
 require 'AddBias';
-require 'RNN_nonSeqInput';
+require 'RNNAttention';
 require 'Recurrent';
 
 --nngraph.setDebug(true)
@@ -152,7 +152,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 
 	local h		  = nn.Identity()()
 	local rnn_inp = {Vh(h),h}
-	local rnn	  = nn.RNN_nonSeqInput(decoder_base,T,outputDepth,false)(rnn_inp)
+	local rnn	  = nn.RNNAttention(decoder_base,T,outputDepth,false)(rnn_inp)
 	self.rnn = rnn
 	--nngraph.annotateNodes()
 	local decoder = nn.gModule({h},{rnn}) 
