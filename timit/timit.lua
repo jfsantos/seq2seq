@@ -19,7 +19,7 @@ cmd:option('-data','TIMIT/logmel.h5','data file')
 cmd:option('-maxnorm',1,'max norm for gradient clipping')
 cmd:option('-maxnumsamples',1e20,'use small number of samples for code testing')
 cmd:option('-batchSize',1,'batch size to use during training')
-cmd:option('-weightDecay',1e-3,'weight decay')
+cmd:option('-weightDecay',1e-4,'weight decay')
 cmd:text()
 
 opt = cmd:parse(arg)
@@ -70,8 +70,8 @@ test  = processData(data.test)
 ------------------ Encoder ------------------
 seqLength       = train.x[1]:size(1)
 inputFrameSize  = train.x[1]:size(2)
-hiddenFrameSize = 1024
-outputFrameSize = 512
+hiddenFrameSize = 512
+outputFrameSize = 256
 kW = 5
 enc_inp = nn.Identity()()
 convlayer = nn.Sequential()
@@ -89,14 +89,14 @@ concat = nn.JoinTable(2,2)({fRNN,bRNN})
 encoder = nn.gModule({enc_inp},{concat})
 
 ------------------ Decoder ------------------
-scoreDepth = 256
-hybridAttendFilterSize = 9
+scoreDepth = 100
+hybridAttendFilterSize = 5
 hybridAttendFeatureMaps = 128
-stateDepth = 512
+stateDepth = 200
 annotationDepth = outputFrameSize*2
 outputDepth = numPhonemes
 peepholes = true
-mlpWidth = 1024
+mlpWidth = 150 
 
 decoder_recurrent = nn.LSTM(stateDepth,stateDepth,peepholes)
 dec_mlp_inp = nn.Identity()()
@@ -127,10 +127,13 @@ parameters, gradients = autoencoder:getParameters()
 
 ------------------ Train ------------------
 optimMethod = optim.adadelta
-optimConfig = {}
+optimConfig = {
+	eps = 1e-8,
+	rho = 0.95
+}
 optimState  = nil
 gradnoise   = {
-	eta   = 0.1,
+	eta   = 1e-3,
 	gamma = 0.55,
 	t     = 0
 }

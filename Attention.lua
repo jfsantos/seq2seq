@@ -62,7 +62,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 		pad_left = hybridAttendFilterSize/2
 		pad_right = pad_left-1
 	end
-	local prev_alpha_reshaped = nn.Reshape(L,1)(prev_alpha)
+	local prev_alpha_reshaped = nn.View(L,1)(prev_alpha)
 	-- alphaReshaped ~ L x 1
 	local padded_alpha = nn.Padding(1,pad_right,2)(nn.Padding(1,-pad_left,2)(prev_alpha_reshaped))
 	padded_alpha.name = "padded alpha"
@@ -71,9 +71,9 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	--  L x scoreDepth
 	
 	------------------ Ws ------------------
-	local prev_s_reshaped = nn.Reshape(stateDepth,1)(prev_s)
+	local prev_s_reshaped = nn.View(stateDepth,1)(prev_s)
 	local ws = nn.TemporalConvolution(1,scoreDepth,stateDepth)(prev_s_reshaped)
-	local Ws = nn.Reshape(L,scoreDepth)(nn.Replicate(L,1,2)(ws))
+	local Ws = nn.View(L,scoreDepth)(nn.Replicate(L,1,2)(ws))
 	--  L x scoreDepth
 	
 	------------------ tanh ------------------
@@ -86,12 +86,12 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	--  L x 1
 
 	------------------ alpha_t ------------------
-	local alpha = nn.SoftMax()(nn.Reshape(L)(e))
+	local alpha = nn.SoftMax()(nn.View(L)(e))
 	alpha.name = 'alpha'
 	--  L
 
 	------------------ c_t ------------------
-	local c = nn.View(-1):setNumInputDims(2)(nn.MM()({nn.Reshape(1,L)(alpha),h}))
+	local c = nn.View(-1):setNumInputDims(2)(nn.MM()({nn.View(1,L)(alpha),h}))
 	self.c = c
 	--  annotationDepth
 
