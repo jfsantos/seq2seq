@@ -73,7 +73,8 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	------------------ Ws ------------------
 	local prev_s_reshaped = nn.View(stateDepth,1)(prev_s)
 	local ws = nn.TemporalConvolution(1,scoreDepth,stateDepth)(prev_s_reshaped)
-	local Ws = nn.View(L,scoreDepth)(nn.Replicate(L,1,2)(ws))
+	local Ws = nn.Reshape(L,scoreDepth)(nn.Replicate(L,1,2)(ws))
+	Ws.name = 'Ws'
 	--  L x scoreDepth
 	
 	------------------ tanh ------------------
@@ -108,6 +109,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	local c_in        = nn.Tanh()(nn.Linear(annotationDepth,stateDepth)(c))
 	local dec_rec_inp = nn.Linear(2*stateDepth,stateDepth)(nn.JoinTable(1,1)({c_in,y_in}))
 	local s,mem       = decoder_recurrent({dec_rec_inp,prev_s,prev_mem}):split(2)
+	decoder_recurrent.name = 'decoder_recurrent'
 
 	------------------ decoder_mlp ------------------
 	-- inputs:
