@@ -2,46 +2,42 @@ require 'nn'
 
 local RNNAttention, parent = torch.class('nn.RNNAttention','nn.Module')
 
-function RNNAttention:__init(recurrent,T,dimoutput,reverse)
+function RNNAttention:__init(recurrent,dimoutput,reverse)
 	parent.__init(self)
 
 	assert(recurrent ~= nil, "recurrent cannot be nil")
-	assert(T ~= nil, "length of sequence must be specified")
 	assert(dimoutput ~= nil, "recurrent must specify dimoutput")
 
 	self.recurrent = recurrent
 	self.dimoutput = dimoutput
-	self.T = T
 	self.reverse = reverse or false
 	
-	self.output = torch.Tensor(T,dimoutput)
-
-	self.rnn = self:buildClones()
-	self:resetCloneParameters();
+	self.output = torch.Tensor()
+	self.rnn = {}
 end
 
-function RNNAttention:buildClones()
-	local clones = {}
+function RNNAttention:addClone()
 	local p,dp = self.recurrent:parameters()
 	if p == nil then
 		p = {}
 	end
 	local mem = torch.MemoryFile("w"):binary()
 	mem:writeObject(self.recurrent)
-	for t = 1, self.T do
-		local reader = torch.MemoryFile(mem:storage(), "r"):binary()
-		local clone = reader:readObject()
-		reader:close()
-		local cp,cdp = clone:parameters()
-		for i=1,#p do
-			cp[i]:set(p[i])
-			cdp[i]:set(dp[i])
-		end
-		clones[t] = clone
-		collectgarbage()
+	local reader = torch.MemoryFile(mem:storage(), "r"):binary()
+	local clone = reader:readObject()
+	reader:close()
+	local cp,cdp = clone:parameters()
+	for i=1,#p do
+		cp[i]:set(p[i])
+		cdp[i]:set(dp[i])
 	end
+	if not self.rnn then
+		self.rnn = {}
+	end
+	self.rnn[#self.rnn+1] = clone
+	collectgarbage()
 	mem:close()
-	return clones
+	self:resetCloneParameters()
 end
 
 function RNNAttention:resetCloneParameters()
@@ -49,7 +45,7 @@ function RNNAttention:resetCloneParameters()
 	if p == nil then
 		p = {}
 	end
-	for t=1,self.T do
+	for t=1,#self.rnn do
 		local cp,cdp = self.rnn[t]:parameters()
 		for i=1,#p do
 			cp[i]:set(p[i])
@@ -73,40 +69,45 @@ function RNNAttention:getParameters()
 end
 
 function RNNAttention:training()
-	for t=1,self.T do
+	for t=1,#self.rnn do
 		self.rnn[t]:training()
 	end
 end
 
 function RNNAttention:evaluate()
-	for t=1,self.T do
+	for t=1,#self.rnn do
 		self.rnn[t]:evaluate()
 	end
 end
 
 function RNNAttention:float()
-	for t=1,self.T do
-		self.clone[t] = self.clones[t]:float()
+	for t=1,#self.rnn do
+		self.rnn[t] = self.rnn[t]:float()
 	end
 	return self:type('torch.FloatTensor')
 end
 
 function RNNAttention:double()
-	for t=1,self.T do
-		self.clone[t] = self.clones[t]:double()
+	for t=1,#self.rnn do
+		self.rnn[t] = self.rnn[t]:double()
 	end
 	return self:type('torch.DoubleTensor')
 end
 
 function RNNAttention:cuda()
-	for t=1,self.T do
-		self.clone[t] = self.clones[t]:cuda()
+	for t=1,#self.rnn do
+		self.rnn[t] = self.rnn[t]:cuda()
 	end
 	return self:type('torch.CudaTensor')
 end
 
 
 local function getBatchSize(input)
+	-- assume 2D = nonbatch, 3d = batch
+	-- if input is a table, then assume
+	-- input[1] is a template
+	--
+	-- returns batchSize
 	if type(input) == 'table' then
 		return getBatchSize(input[1])
 	else
@@ -119,26 +120,38 @@ local function getBatchSize(input)
 end
 
 
+function RNNAttention:setT(T)
+	self.T = T
+end
+
 function RNNAttention:updateOutput(input)
 	--print('RNNAttention type(input) ==',type(input))
 	--print('RNNAttention input = ',input)
+
+	local T = self.T
+	assert(T ~= nil, 'T cannot be nil')
+
 	local batchSize = getBatchSize(input)
 	
+	self.batchSize = batchSize
 	if batchSize == 0 then
 		self.sequence_dim = 1
-		self.output:resize(self.T,self.dimoutput)
+		self.output:resize(T,self.dimoutput)
 	else
 		self.sequence_dim = 2
-		self.output:resize(batchSize,self.T,self.dimoutput)
+		self.output:resize(batchSize,T,self.dimoutput)
 	end
 	
 	self.h = {}
 	local y, h
-	local start,finish,step = 1, self.T, 1
+	local start,finish,step = 1, T, 1
 	if self.reverse then
-		start,finish,step = self.T, 1, -1
+		start,finish,step = T, 1, -1
 	end
 	for t = start,finish,step do
+		if not self.rnn[t] then
+			self:addClone()
+		end
 		--print('==================================> RNN t =',t)
 		y, h = unpack(self.rnn[t]:forward({input,y,h}))
 		--print('RNNAttention output')
@@ -150,6 +163,7 @@ function RNNAttention:updateOutput(input)
 
 	return self.output
 end
+
 
 function RNNAttention:_resizeGradInput(input,gradInput)
 	if type(input) == 'table' then
@@ -168,7 +182,7 @@ end
 
 function RNNAttention:updateGradInput(input, gradOutput)
 	local batchSize = getBatchSize(input)
-	
+	local T = self.T
 	self.gradInput = self:_resizeGradInput(input,self.gradInput)
 
 	local function updateGradInput(dEdx,gradInput)
@@ -187,9 +201,9 @@ function RNNAttention:updateGradInput(input, gradOutput)
 	local dEdpy  -- gradient of loss w.r.t. prev output
 	local dEdh   -- gradient of loss w.r.t. hidden state
 	local dEdph  -- gradient of loss w.r.t. prev hidden state
-	local start,finish,step = 1, self.T, 1
+	local start,finish,step = 1, T, 1
 	if self.reverse then
-		start,finish,step = self.T, 1, -1
+		start,finish,step = T, 1, -1
 	end
 	for t = finish,start,-step do
 		local x = input

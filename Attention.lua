@@ -15,9 +15,9 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 						  stateDepth,				-- size of hidden state
 						  annotationDepth,			-- size of annotations
 						  outputDepth,				-- size of output layer
-						  L,						-- length of annotations
-						  T							-- length of output sequence
-						  )
+						  L)--,						-- length of annotations
+						  --T							-- length of output sequence
+						  --)
 	parent.__init(self)
 
 	self.decoder_recurrent = decoder_recurrent
@@ -27,8 +27,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 	self.stateDepth = stateDepth
 	self.annotationDepth = annotationDepth
 	self.L = L
-	self.T = T
-
+	--self.T = T
 
 	------------------ construct attentional decoder ------------------
 	-- First, construct Vh separately, which will be less memory intensive than
@@ -88,6 +87,7 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 
 	------------------ alpha_t ------------------
 	local alpha = nn.SoftMax()(nn.Reshape(L)(e))
+	alpha.name = 'alpha'
 	--  L
 
 	------------------ c_t ------------------
@@ -152,13 +152,37 @@ function Attention:__init(decoder_recurrent,		-- recurrent part of the decoder ~
 
 	local h		  = nn.Identity()()
 	local rnn_inp = {Vh(h),h}
-	local rnn	  = nn.RNNAttention(decoder_base,T,outputDepth,false)(rnn_inp)
+	local rnn	  = nn.RNNAttention(decoder_base,outputDepth,false)
 	self.rnn = rnn
 	--nngraph.annotateNodes()
-	local decoder = nn.gModule({h},{rnn}) 
+	local decoder = nn.gModule({h},{rnn(rnn_inp)}) 
 	decoder.name = "decoder"
 
 	self.decoder = decoder
+end
+
+function Attention:alpha()
+	local rnn = self.rnn
+	local alphas = {}
+	local sequence_dim = rnn.sequence_dim
+	local batchSize = rnn.batchSize
+	assert(batchSize ~= nil, 'forward must be run at least once to recover alphas')
+	
+	for t = 1, #rnn.rnn do
+		nodes = rnn.rnn[t].recurrent.backwardnodes
+		for i = 1, #nodes do
+			f = nodes[i]
+			if f.name == 'alpha' then
+				alpha = f.data.module.output
+				if batchSize == 0 then
+					alphas[t] = alpha:view(1,alpha:size(1))
+				else
+					alphas[t] = alpha:view(batchSize,1,alpha:size(2))
+				end
+			end
+		end
+	end
+	return nn.JoinTable(sequence_dim):type(alphas[1]:type()):forward(alphas)
 end
 
 function Attention:parameters()
@@ -186,11 +210,14 @@ function Attention:cuda()
 	return self:type('torch.CudaTensor')
 end
 
-
+function Attention:setT(T)
+	self.rnn:setT(T)
+end
 function Attention:updateOutput(input)
 	self.output = self.decoder:forward(input)
 	return self.output
 end
+
 
 function Attention:updateGradInput(input, gradOutput)
 	self.gradInput = self.decoder:backward(input, gradOutput)
