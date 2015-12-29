@@ -1,6 +1,5 @@
 import librosa
 import numpy as np
-from scikits.audiolab import Sndfile, play
 import os
 import h5py
 import pickle
@@ -21,14 +20,14 @@ savedir            = options.save
 rootdirtrain       = os.path.join(rootdir,'TRAIN')
 rootdirtest        = os.path.join(rootdir,'TEST')
 
-print 'featuresSameLength = %s' % featuresSameLength
-print 'phonemesSameLength = %s' % phonemesSameLength
-print 'rootdir            = %s' % rootdir
-print 'savedir            = %s' % savedir
-print 'validIDs           = %s' % options.valid
+print('featuresSameLength = %s' % featuresSameLength)
+print('phonemesSameLength = %s' % phonemesSameLength)
+print('rootdir            = %s' % rootdir)
+print('savedir            = %s' % savedir)
+print('validIDs           = %s' % options.valid)
 
 #------------------- Load Files --------------------
-print 'loading files'
+print('loading files')
 def getFiles(rootdir,printFiles=False):
     files = {}
     for root, dirnames, filenames in os.walk(rootdir):
@@ -37,7 +36,7 @@ def getFiles(rootdir,printFiles=False):
             myid,filetype = myname.split('.')
             if filetype in ['PHN','TXT','WAV','WRD']:
                 dr,spkr,st = myid.split('/')
-                if not myid in files.keys():
+                if not myid in list(files.keys()):
                     files[myid] = {}
                     files[myid]['dr'] = dr
                     files[myid]['spkr'] = spkr
@@ -45,7 +44,7 @@ def getFiles(rootdir,printFiles=False):
                     files[myid]['root'] = rootdir
                 files[myid][filetype] = myname
                 if printFiles:
-                    print myname
+                    print(myname)
     return files
 
 
@@ -53,12 +52,12 @@ alltrainfiles = getFiles(rootdirtrain)
 testfiles = getFiles(rootdirtest)
 
 #------------------- Load Validation SpeakerIDs --------------------
-print 'load validation speakerIDs'
+print('load validation speakerIDs')
 vaids = np.loadtxt(options.valid,dtype=str)
 
 trainfiles = {}
 validfiles = {}
-for k,v in alltrainfiles.iteritems():
+for k,v in alltrainfiles.items():
     if v['spkr'] in vaids:
         validfiles[k] = v
     else:
@@ -66,50 +65,50 @@ for k,v in alltrainfiles.iteritems():
 
 ### check there are only 50 spkrs in validfiles, 
 ### and check that there is no overlap between trainfiles and validfiles
-vaspkrs = set([v['spkr'] for k,v in validfiles.iteritems()])
-print "num valid speakers = %s" % len(vaspkrs)
+vaspkrs = set([v['spkr'] for k,v in validfiles.items()])
+print("num valid speakers = %s" % len(vaspkrs))
 
-trspkrs = set([v['spkr'] for k,v in trainfiles.iteritems()])
-print 'len(vaspkrs.intersection(trspkrs)) = %s' % len(vaspkrs.intersection(trspkrs))
+trspkrs = set([v['spkr'] for k,v in trainfiles.items()])
+print('len(vaspkrs.intersection(trspkrs)) = %s' % len(vaspkrs.intersection(trspkrs)))
 
 #------------------- Process Phonemes & Words --------------------
-print 'parse phonemes & words'
+print('parse phonemes & words')
 def parseFile(x,filetype):
     with open(os.path.join(x['root'],x[filetype])) as f:
         lines = f.read().split('\n')
     return [l.split()[-1] for l in lines if len(l) > 0]
 
 def parseAllFiles(files,filetype,keyname):
-    for k,f in files.iteritems():
+    for k,f in files.items():
         f[keyname] = parseFile(f,filetype)
         
 def addEOStag(files):
     eos = '<EOS>'
-    for k,f in files.iteritems():
+    for k,f in files.items():
         f['phonemes'].append(eos) 
 
 def makeLabelsSameLength(train,valid,test,eos='<EOS>'):
     maxlength = 0
-    for k,f in train.iteritems():
+    for k,f in train.items():
         maxlength = max(maxlength,len(f['phonemes']))
     
-    for k,f in valid.iteritems():
+    for k,f in valid.items():
         assert len(f['phonemes']) <= maxlength, 'uh-oh'
-    for k,f in test.iteritems():
+    for k,f in test.items():
         assert len(f['phonemes']) <= maxlength, 'uh-oh'
         
     maxlength = maxlength
-    for k,f in train.iteritems():
+    for k,f in train.items():
         mylen = len(f['phonemes'])
         f['phonemes'] = f['phonemes'] + [eos]*(maxlength-mylen)  
         f['label_flag'] = np.zeros(maxlength)  
         f['label_flag'][:mylen] = 1
-    for k,f in valid.iteritems():
+    for k,f in valid.items():
         mylen = len(f['phonemes'])
         f['phonemes'] = f['phonemes'] + [eos]*(maxlength-mylen) 
         f['label_flag'] = np.zeros(maxlength)  
         f['label_flag'][:mylen] = 1   
-    for k,f in test.iteritems():
+    for k,f in test.items():
         mylen = len(f['phonemes'])
         f['phonemes'] = f['phonemes'] + [eos]*(maxlength-mylen)
         f['label_flag'] = np.zeros(maxlength)  
@@ -131,27 +130,27 @@ if phonemesSameLength:
     makeLabelsSameLength(trainfiles,validfiles,testfiles)
       
 #------------------- generate phoneme vocab --------------------
-print 'generate phoneme vocab'
+print('generate phoneme vocab')
 phonemesTrain = set()
-for k,f in trainfiles.iteritems():
+for k,f in trainfiles.items():
     for p in f['phonemes']:
         phonemesTrain.add(p)
-for k,f in validfiles.iteritems():
+for k,f in validfiles.items():
     for p in f['phonemes']:
         phonemesTrain.add(p)
 
 phonemesTest = set()
-for k,f in testfiles.iteritems():
+for k,f in testfiles.items():
     for p in f['phonemes']:
         phonemesTest.add(p)
 
 phonemes = {p:i+1 for i,p in enumerate(phonemesTrain)}
 
 #------------------- digitize phonemes --------------------
-print 'digitize phonemes'
+print('digitize phonemes')
 def digitizePhonemes(files):
     lengths = set()
-    for k,f in files.iteritems():
+    for k,f in files.items():
         f['phonemeLabels'] = [phonemes[p] for p in f['phonemes']]
         lengths.add(len(f['phonemeLabels']))
 
@@ -161,9 +160,8 @@ digitizePhonemes(testfiles)
 
 #------------------- generate features --------------------
 def logmel(filename,n_fft=2048,hop_length=512):
-    f = Sndfile(filename, 'r')
-    data = f.read_frames(f.nframes)
-    melspectrogram = librosa.feature.melspectrogram(y=data, sr=f.samplerate, n_fft=n_fft, hop_length=hop_length)
+    data, fs = librosa.load(filename)
+    melspectrogram = librosa.feature.melspectrogram(y=data, sr=fs, n_fft=n_fft, hop_length=hop_length)
     logmel = librosa.core.logamplitude(melspectrogram)[:40,:]
     delta1 = librosa.feature.delta(logmel[:40,:],order=1)
     delta2 = librosa.feature.delta(logmel[:40,:],order=2)
@@ -172,9 +170,8 @@ def logmel(filename,n_fft=2048,hop_length=512):
     return features.T
 
 def CQT(filename, fmin=None, n_bins=84, hop_length=512):
-    f = Sndfile(filename, 'r')
-    data = f.read_frames(f.nframes)
-    cqt = librosa.cqt(data, sr=f.samplerate, fmin=fmin, n_bins=n_bins, hop_length=hop_length)
+    data, fs = librosa.load(filename)
+    cqt = librosa.cqt(data, sr=fs, fmin=fmin, n_bins=n_bins, hop_length=hop_length)
     delta1 = librosa.feature.delta(cqt[24:,:],order=1)
     delta2 = librosa.feature.delta(cqt[24:,:],order=2)
     energy = librosa.feature.rmse(y=data)
@@ -182,14 +179,14 @@ def CQT(filename, fmin=None, n_bins=84, hop_length=512):
     return features.T
 
 def getFeatures(files,func=logmel,**kwargs):
-    for k,f in files.iteritems():
+    for k,f in files.items():
         filename = os.path.join(f['root'],f['WAV'])
         f['features'] = func(filename,**kwargs)
         
 def normalizeFeatures(train,valid,test,pad=10,use_samelength=False):
     maxlength = 0
     featurelist = []
-    for k,f in train.iteritems():
+    for k,f in train.items():
         maxlength = max(maxlength,len(f['features']))
         featurelist.append(f['features'])
     featurelist = np.vstack(featurelist)
@@ -197,7 +194,7 @@ def normalizeFeatures(train,valid,test,pad=10,use_samelength=False):
     std = featurelist.std(axis=0)
     
     def normalize_and_pad(files):
-        for k,f in files.iteritems():
+        for k,f in files.items():
             mylen = len(f['features'])
             padding = np.zeros((pad,f['features'].shape[1]))
             f['features'] = (f['features']-mean)/std
@@ -221,15 +218,15 @@ def pickleIt(X,outputName):
 #------------------- To HDF5 --------------------
 def toHDF5(allfiles,filename):
     with h5py.File(filename,'w') as h:
-        for g,files in allfiles.iteritems():
+        for g,files in allfiles.items():
             grp = h.create_group(g)
-            template = files[files.keys()[0]]
+            template = files[list(files.keys())[0]]
             sequenceLength,featureDepth = template['features'].shape
             
             if featuresSameLength and phonemesSameLength:
-                features = [f['features'].reshape(1,sequenceLength,featureDepth) for f in files.values()]
-                labels = [np.array(f['phonemeLabels']).reshape(1,-1) for f in files.values()]
-                label_flags = [np.array(f['label_flag']).reshape(1,-1) for f in files.values()]
+                features = [f['features'].reshape(1,sequenceLength,featureDepth) for f in list(files.values())]
+                labels = [np.array(f['phonemeLabels']).reshape(1,-1) for f in list(files.values())]
+                label_flags = [np.array(f['label_flag']).reshape(1,-1) for f in list(files.values())]
                 grp['x'] = np.vstack(features)
                 grp['y'] = np.vstack(labels)
                 grp['ymask'] = np.vstack(label_flags)
@@ -240,7 +237,7 @@ def toHDF5(allfiles,filename):
                     mygrp['y'] = np.array(f['phonemeLabels'])
 
 #------------------- logmel features --------------------
-print 'generating logmel features'
+print('generating logmel features')
 getFeatures(trainfiles,func=logmel)
 getFeatures(validfiles,func=logmel)
 getFeatures(testfiles,func=logmel)
@@ -256,7 +253,7 @@ toHDF5(allfiles,os.path.join(savedir,'logmel.h5'))
 pickleIt([logmel_mean, logmel_std],os.path.join(savedir,'logmel_mean_std.pkl'))
 
 #------------------- CQT features --------------------
-print 'generating cqt features'
+print('generating cqt features')
 getFeatures(trainfiles,func=CQT)
 getFeatures(validfiles,func=CQT)
 getFeatures(testfiles,func=CQT)
