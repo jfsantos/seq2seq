@@ -14,6 +14,8 @@ function RNNAttention:__init(recurrent,dimoutput,reverse)
 	
 	self.output = torch.Tensor()
 	self.rnn = {}
+
+	self.zeros_y = torch.Tensor()
 end
 
 function RNNAttention:addClone()
@@ -69,18 +71,21 @@ function RNNAttention:getParameters()
 end
 
 function RNNAttention:training()
+	self.recurrent:training()
 	for t=1,#self.rnn do
 		self.rnn[t]:training()
 	end
 end
 
 function RNNAttention:evaluate()
+	self.recurrent:evaluate()
 	for t=1,#self.rnn do
 		self.rnn[t]:evaluate()
 	end
 end
 
 function RNNAttention:float()
+	self.recurrent = self.recurrent:float()
 	for t=1,#self.rnn do
 		self.rnn[t] = self.rnn[t]:float()
 	end
@@ -88,6 +93,7 @@ function RNNAttention:float()
 end
 
 function RNNAttention:double()
+	self.recurrent = self.recurrent:double()
 	for t=1,#self.rnn do
 		self.rnn[t] = self.rnn[t]:double()
 	end
@@ -95,6 +101,7 @@ function RNNAttention:double()
 end
 
 function RNNAttention:cuda()
+	self.recurrent = self.recurrent:cuda()
 	for t=1,#self.rnn do
 		self.rnn[t] = self.rnn[t]:cuda()
 	end
@@ -124,26 +131,33 @@ function RNNAttention:setT(T)
 	self.T = T
 end
 
-function RNNAttention:updateOutput(input)
-	--print('RNNAttention type(input) ==',type(input))
-	--print('RNNAttention input = ',input)
+function RNNAttention:apply2clones(func)
+	func(self.recurrent)
+	for t = 1, #self.rnn do
+		func(self.rnn[t])
+	end
+end
 
+function RNNAttention:updateOutput(input)
 	local T = self.T
 	assert(T ~= nil, 'T cannot be nil')
 
 	local batchSize = getBatchSize(input)
+	local nonrecurrent, y = unpack(input)
 	
 	self.batchSize = batchSize
 	if batchSize == 0 then
 		self.sequence_dim = 1
 		self.output:resize(T,self.dimoutput)
+		self.zeros_y:resize(self.dimoutput)
 	else
 		self.sequence_dim = 2
 		self.output:resize(batchSize,T,self.dimoutput)
+		self.zeros_y:resize(batchSize,self.dimoutput)
 	end
 	
 	self.h = {}
-	local y, h
+	local prev_y, next_y, h
 	local start,finish,step = 1, T, 1
 	if self.reverse then
 		start,finish,step = T, 1, -1
@@ -152,12 +166,14 @@ function RNNAttention:updateOutput(input)
 		if not self.rnn[t] then
 			self:addClone()
 		end
-		--print('==================================> RNN t =',t)
-		y, h = unpack(self.rnn[t]:forward({input,y,h}))
-		--print('RNNAttention output')
-		--print('y',y)
-		--print('h',h)
-		self.output:select(self.sequence_dim,t):copy(y)
+		if t == start then
+			prev_y = self.zeros_y
+		else
+			prev_y = y:select(self.sequence_dim,t-step)
+		end
+		local x = {nonrecurrent, prev_y}
+		next_y, h = unpack(self.rnn[t]:forward({x,h}))
+		self.output:select(self.sequence_dim,t):copy(next_y)
 		self.h[t] = h
 	end
 
@@ -185,42 +201,47 @@ function RNNAttention:updateGradInput(input, gradOutput)
 	local T = self.T
 	self.gradInput = self:_resizeGradInput(input,self.gradInput)
 
-	local function updateGradInput(dEdx,gradInput)
+	local function updateGradInput(dEdx,gradInput,t)
 		if type(gradInput) == 'table' then
 			for i = 1, #gradInput do
-				updateGradInput(dEdx[i],gradInput[i])
+				updateGradInput(dEdx[i],gradInput[i],t)
 			end
 		else
-			gradInput:add(dEdx)
+			if t then
+				gradInput:select(self.sequence_dim,t):add(dEdx)
+			else
+				gradInput:add(dEdx)
+			end
 		end
 	end
 
 	self.gradh = {}
 	local dEdx	 -- gradient of loss w.r.t. inputs
 	local dEdy   -- gradient of loss w.r.t. output
-	local dEdpy  -- gradient of loss w.r.t. prev output
 	local dEdh   -- gradient of loss w.r.t. hidden state
 	local dEdph  -- gradient of loss w.r.t. prev hidden state
+	local nonrecurrent, y = unpack(input)
+	local prev_y, next_y, h
 	local start,finish,step = 1, T, 1
 	if self.reverse then
 		start,finish,step = T, 1, -1
 	end
 	for t = finish,start,-step do
-		local x = input
-		local y,h
+		local h
 		if t == start then
-			y = nil
+			prev_y = self.zeros_y
 			h = nil
 		else
 			-- note: self.sequence_dim is set in updateOutput
-			y = self.output:select(self.sequence_dim,t-step)
+			prev_y = y:select(self.sequence_dim,t-step)
 			h = self.h[t-step]
 		end
+		local x = {nonrecurrent, prev_y}
 		dEdy = gradOutput:select(self.sequence_dim,t)
-		dEdy = dEdy + (dEdpy or 0)
 		dEdh = dEdph
-		dEdx,dEdpy,dEdph = unpack(self.rnn[t]:backward({x,y,h},{dEdy,dEdh}))
-		updateGradInput(dEdx,self.gradInput)
+		dEdx,dEdph = unpack(self.rnn[t]:backward({x,h},{dEdy,dEdh}))
+		updateGradInput(dEdx[1],self.gradInput[1])   -- nonrecurrent input
+		updateGradInput(dEdx[2],self.gradInput[2],t) -- y
 		self.gradh[t-step] = dEdph
 	end
 
